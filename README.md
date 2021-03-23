@@ -56,6 +56,7 @@ sbitsInit(state);
 ### Insert (put) items into tree
 
 ```c
+/* keyPtr points to key to insert. dataPtr points to associated data value. */
 sbitsPut(state, (void*) keyPtr, (void*) dataPtr);
 ```
 
