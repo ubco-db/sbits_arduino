@@ -4,7 +4,8 @@
 @author		Ramon Lawrence
 @brief		This file is for sequential bitmap indexing for time series (SBITS).
 @copyright	Copyright 2021
-			The University of British Columbia,		
+			The University of British Columbia,
+			Ramon Lawrence		
 @par Redistribution and use in source and binary forms, with or without
 	modification, are permitted provided that the following conditions are met:
 
@@ -36,15 +37,16 @@
 extern "C" {
 #endif
 
-#if defined(ARDUINO)
-#include "serial_c_iface.h"
-#include "file/kv_stdio_intercept.h"
-#include "file/sd_stdio_c_iface.h"
-#endif
-
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+
+#if defined(ARDUINO)
+#include "file/serial_c_iface.h"
+#include "file/sd_stdio_c_iface.h"
+#endif
+
+
 
 /* Define type for page ids (physical and logical). */
 typedef uint32_t id_t;
@@ -113,8 +115,8 @@ typedef uint16_t count_t;
   (bm & 0x01 ? '1' : '0') 
 
 typedef struct {
-	ION_FILE *file;								/* File for storing data records. */
-	ION_FILE *indexFile;						/* File for storing index records. */
+	SD_FILE *file;								/* File for storing data records. */
+	SD_FILE *indexFile;						/* File for storing index records. */
 	id_t 	startAddress;						/* Start address in memory space */
 	id_t 	endAddress;							/* End address in memory space */
 	count_t eraseSizeInPages;					/* Erase size in pages */

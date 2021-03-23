@@ -40,8 +40,6 @@
 #if !defined(SD_STDIO_C_IFACE_H_)
 #define SD_STDIO_C_IFACE_H_
 
-#include "../kv_system.h"
-
 #if defined(ARDUINO)
 
 #include <Arduino.h>
@@ -50,7 +48,19 @@
 extern "C" {
 #endif
 
-#include "kv_stdio_intercept.h"
+/* Redefine stdio.h functions for operation on Arduino SD card. */
+#define  fopen(x, y)		sd_fopen(x, y)
+#define  fclose(x)			sd_fclose(x)
+#define  fwrite(w, x, y, z) sd_fwrite(w, x, y, z)
+#define  fsetpos(x, y)		sd_fsetpos(x, y)
+#define  fgetpos(x, y)		sd_fgetpos(x, y)
+#define  fflush(x)			sd_fflush(x)
+#define  fseek(x, y, z)		sd_fseek(x, y, z)
+#define  fread(w, x, y, z)	sd_fread(w, x, y, z)
+#define  ftell(x)			sd_ftell(x)
+#define  fremove(x)			sd_remove(x)
+#define  frewind(x)			sd_rewind(x)
+
 
 /**
 @brief		Wrapper around Arduino File type (a C++ object).
@@ -109,7 +119,7 @@ sd_fflush(
 int
 sd_fgetpos(
 	SD_FILE		*stream,
-	ion_fpos_t	*pos
+	uint32_t	*pos
 );
 
 /**
@@ -189,7 +199,7 @@ sd_fseek(
 int
 sd_fsetpos(
 	SD_FILE		*stream,
-	ion_fpos_t	*pos
+	uint32_t	*pos
 );
 
 /**

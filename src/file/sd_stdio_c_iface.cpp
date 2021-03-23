@@ -92,7 +92,7 @@ sd_fflush(
 int
 sd_fsetpos(
 	SD_FILE		*stream,
-	ion_fpos_t	*pos
+	uint32_t	*pos
 ) {
 	return (stream) ? !(stream->f.seek(*pos)) : 1;
 }
@@ -100,7 +100,7 @@ sd_fsetpos(
 int
 sd_fgetpos(
 	SD_FILE		*stream,
-	ion_fpos_t	*pos
+	uint32_t	*pos
 ) {
 	*pos = (stream) ? stream->f.position() : 0;
 	return 0;
@@ -111,8 +111,8 @@ sd_fopen(
 	const char	*filename,
 	const char	*mode
 ) {
-	uint8_t			operation;
-	ion_boolean_t	seek_start = boolean_false;
+	uint8_t		operation;
+	uint8_t		seek_start = 0;
 
 	if ((strcmp(mode, "r") == 0) || (strcmp(mode, "rb") == 0)) {
 		/*	Open a file for reading. The file must exist. */
@@ -143,7 +143,7 @@ sd_fopen(
 		}
 
 		operation	= FILE_WRITE;
-		seek_start	= boolean_true;
+		seek_start	= 1;
 	}
 	/* Create an empty file for both reading and writing. */
 	else if (strstr(mode, "w+") != NULL) {

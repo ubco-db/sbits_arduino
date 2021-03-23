@@ -5,7 +5,8 @@
 @brief		This file does performance/correctness testing of sequential bitmap 
             indexing for time series (SBITS).
 @copyright	Copyright 2021
-			The University of British Columbia,		
+			The University of British Columbia,
+            Ramon Lawrence		
 @par Redistribution and use in source and binary forms, with or without
 	modification, are permitted provided that the following conditions are met:
 
@@ -38,8 +39,6 @@
 
 #include "sbits.h"
 
-
-#define EXTERNAL_SORT_MAX_RAND 1000000
 
 /* A bitmap with 8 buckets (bits). Range 0 to 100. */
 void updateBitmapInt8Bucket(void *data, void *bm)

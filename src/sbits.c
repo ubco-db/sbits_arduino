@@ -4,7 +4,8 @@
 @author		Ramon Lawrence
 @brief		This file is for sequential bitmap indexing for time series (SBITS).
 @copyright	Copyright 2021
-			The University of British Columbia,		
+			The University of British Columbia,
+			Ramon Lawrence		
 @par Redistribution and use in source and binary forms, with or without
 	modification, are permitted provided that the following conditions are met:
 
@@ -802,7 +803,7 @@ int8_t readPage(sbitsState *state, id_t pageNum)
 	}
 
 	/* Page is not in buffer. Read from storage. */
-    ION_FILE* fp = state->file;
+    SD_FILE* fp = state->file;
     void *buf = state->buffer + state->pageSize;
 
     /* Seek to page location in file */
@@ -836,7 +837,7 @@ int8_t readIndexPage(sbitsState *state, id_t pageNum)
 	}
 	
 	/* Page is not in buffer. Read from storage. */
-    ION_FILE* fp = state->indexFile;
+    SD_FILE* fp = state->indexFile;
     void *buf = state->buffer + state->pageSize*SBITS_INDEX_READ_BUFFER;
 
     /* Seek to page location in file */
