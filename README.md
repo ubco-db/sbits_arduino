@@ -48,8 +48,6 @@ state->startAddress = 0;
 state->endAddress = state->pageSize * 1000;  /* Decide how much memory to use for data storage */	
 state->eraseSizeInPages = 4;
 state->parameters = SBITS_USE_MAX_MIN | SBITS_USE_BMAP | SBITS_USE_INDEX;
-if (SBITS_USING_INDEX(state->parameters) == 1)
-	state->endAddress += state->pageSize * (state->eraseSizeInPages *2);  
 
 /* Initialize SBITS structure with parameters */
 sbitsInit(state);
