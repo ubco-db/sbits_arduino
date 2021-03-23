@@ -20,6 +20,10 @@ SBITS is a high performance embedded data storage and index structure for time s
 * serial_c_iface.h, serial_c_iface.cpp - allows printf() on Arduino
 * sd_stdio_c_iface.h, sd_stdio_c_iface.h - allows use of stdio file API (e.g. fopen())
 
+## Documentation
+
+A paper describing SBITS use for time series indexing is at https://www.scitepress.org/Link.aspx?doi=10.5220/0010318800920099 with a [SBITS_time_series_index.pdf](pre-print also available).
+
 ## Usage
 
 ### Setup Index and Configure Memory
