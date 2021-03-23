@@ -78,9 +78,9 @@ void setup() {
 
   /* List all files in the card with date and size */
   root.ls(LS_R | LS_DATE | LS_SIZE);
-  root.remove(root, "tmpsort.bin");
-  root.remove(root,"myfile2.bin");
-
+  root.remove(root, "datafile.bin");
+  root.remove(root, "idxfile.bin");
+  
   SD.begin(4);
   
   runalltests_sbits(); 

@@ -130,6 +130,8 @@ int8_t sbitsInit(sbitsState *state)
 	/* Calculate number of records per page */
 	state->maxRecordsPerPage = (state->pageSize - state->headerSize) / state->recordSize;
 
+	printf("Max records per page: %d\n", state->maxRecordsPerPage);
+
 	/* Allocate first page of buffer as output page */
 	initBufferPage(state, 0);
  
@@ -165,40 +167,44 @@ int8_t sbitsInit(sbitsState *state)
 			printf("ERROR: SBITS using index requires at least 4 page buffers. Defaulting to without index.\n");
 			state->parameters -= SBITS_USE_INDEX;
 		}
-
-		/* Setup index file. */  
-		state->indexFile = fopen("indexfile.bin", "w+b");
-    	if (state->indexFile == NULL) 
+		else
 		{
-        	printf("Error: Can't open index file!\n");
-        	return -1;
-    	}
+			/* Setup index file. */  
+			state->indexFile = fopen("idxfile.bin", "w+b");
+			if (state->indexFile == NULL) 
+			{
+				printf("Error: Can't open index file!\n");
+				return -1;
+			}
 
-		state->maxIdxRecordsPerPage = (state->pageSize - 16) / sizeof(count_t);		/* 4 for id, 2 for count, 2 for bitmap (not used), 4 for minKey (pageId), 4 for maxKey (pageId) */
+			state->maxIdxRecordsPerPage = (state->pageSize - 16) / sizeof(count_t);		/* 4 for id, 2 for count, 2 for bitmap (not used), 4 for minKey (pageId), 4 for maxKey (pageId) */
 
-		/* Allocate third page of buffer as index output page */
-		initBufferPage(state, SBITS_INDEX_WRITE_BUFFER);
+			/* Allocate third page of buffer as index output page */
+			initBufferPage(state, SBITS_INDEX_WRITE_BUFFER);
 
-		/* Add page id to minimum value spot in page */
-		void *buf = state->buffer + state->pageSize*(SBITS_INDEX_WRITE_BUFFER);
-		id_t *ptr = (id_t*) SBITS_GET_MIN_KEY(buf, state);
-		*ptr = state->nextPageId;
+			/* Add page id to minimum value spot in page */
+			void *buf = state->buffer + state->pageSize*(SBITS_INDEX_WRITE_BUFFER);
+			id_t *ptr = (id_t*) SBITS_GET_MIN_KEY(buf, state);
+			*ptr = state->nextPageId;
 
-		state->nextIdxPageId = 0;
-		state->nextIdxPageWriteId = 0;
+			state->nextIdxPageId = 0;
+			state->nextIdxPageWriteId = 0;
 
-		count_t numIdxPages = numPages / 100;			/* Index overhead is about 1% of data size */
-		if (numIdxPages < state->eraseSizeInPages * 2)
-			numIdxPages = state->eraseSizeInPages * 2;	/* Minimum index space is two erase blocks */
-
-		/* Index pages are at the end of the memory space */
-		state->endIdxPage = state->endDataPage;
-		state->endDataPage -= numIdxPages;
-		state->startIdxPage = state->endDataPage+1;		
-		// state->firstIdxPage = state->startIdxPage;
-		state->firstIdxPage =0;		/* TODO: Decide how to handle if share memory space. For now, having logical pages start from 0 rather than the physical page id after the data block */
-		state->erasedEndIdxPage = 0;
-		state->wrappedIdxMemory = 0;
+			count_t numIdxPages = numPages / 100;			/* Index overhead is about 1% of data size */
+			if (numIdxPages < state->eraseSizeInPages * 2)
+				numIdxPages = state->eraseSizeInPages * 2;	/* Minimum index space is two erase blocks */
+			else											/* Ensure index space is a multiple of erase block size */
+				numIdxPages = ((numIdxPages/state->eraseSizeInPages)+1)*state->eraseSizeInPages;
+			
+			/* Index pages are at the end of the memory space */
+			state->endIdxPage = state->endDataPage;
+			state->endDataPage -= numIdxPages;
+			state->startIdxPage = state->endDataPage+1;		
+			// state->firstIdxPage = state->startIdxPage;
+			state->firstIdxPage =0;		/* TODO: Decide how to handle if share memory space. For now, having logical pages start from 0 rather than the physical page id after the data block */
+			state->erasedEndIdxPage = 0;
+			state->wrappedIdxMemory = 0;
+		}
 	}
 	return 0;
 }
@@ -387,7 +393,7 @@ int8_t sbitsGet(sbitsState *state, void* key, void *data)
 	pageId = pageId + state->firstDataPage;
 	if (pageId >= state->endDataPage)
 		pageId = pageId - state->endDataPage;
-	
+
 	void *buf;
 	buf = state->buffer + state->pageSize;
 	if (readPage(state, pageId) != 0)
@@ -396,23 +402,27 @@ int8_t sbitsGet(sbitsState *state, void* key, void *data)
 	/* This is linear search after pick starting page. Change to be binary. */
 	/* Advance to correct page as required */
 	while (state->compareKey(key,sbitsGetMinKey(state,buf)) < 0)
-	{
+	{					
 		if (pageId == state->firstDataPage)
 			return -1;	/* not found - search key is less than minimum value in first data page*/
 		
 		pageId--;
 		if (pageId < 0 && state->wrappedMemory == 1)
 			pageId = state->endDataPage;		
-		
+				
 		if (readPage(state, pageId) != 0)
 			return -1;
 	}	
 
+	
 	while (state->compareKey(key,sbitsGetMaxKey(state,buf)) > 0)
 	{
+		printf("MK: %d\n", *((int32_t*) sbitsGetMaxKey(state,buf)));
 		pageId++;
 		if (pageId > state->endDataPage)
 			pageId = pageId - state->endDataPage;
+
+
 		if (pageId == state->nextPageId)
 			return -1;	/* not found */		
 		if (readPage(state, pageId) != 0)
@@ -460,6 +470,7 @@ void sbitsInitIterator(sbitsState *state, sbitsIterator *it)
 				it->lastIdxIterRec = 10000;	/* Force to read next index page */	
 				it->wrappedIdxMemory = 0;				
 			}
+			printf("%lu  %lu\n",it->lastIdxIterPage,  state->firstIdxPage);
 		}
 	}
 
@@ -487,7 +498,7 @@ int8_t sbitsFlush(sbitsState *state)
 		/* Copy record onto index page */
 		count_t *bm = SBITS_GET_BITMAP(state->buffer);
 		memcpy( (void*) (buf + SBITS_IDX_HEADER_SIZE + sizeof(count_t) * idxcount), bm, sizeof(count_t));
-		printf("FBM: "BM_TO_BINARY_PATTERN"\n", BM_TO_BINARY(*bm));	
+		// printf("FBM: "BM_TO_BINARY_PATTERN"\n", BM_TO_BINARY(*bm));	
 		
 		/* TODO: Handle case that index buffer is full */				
 		writeIndexPage(state, buf);
@@ -546,17 +557,18 @@ int8_t sbitsNext(sbitsState *state, sbitsIterator *it, void **key, void **data)
 					void* idxbuf = state->buffer+state->pageSize*SBITS_INDEX_READ_BUFFER;
 					count_t cnt = SBITS_GET_COUNT(idxbuf);
 					if (it->lastIdxIterRec == 10000 || it->lastIdxIterRec >= cnt)
-					{	/* Read next index block. Special case for first block as will not be read into buffer (so count not accurate). */
+					{	/* Read next index block. Special case for first block as will not be read into buffer (so count not accurate). */						
 						if (it->lastIdxIterPage >= (state->endIdxPage - state->startIdxPage +1))
 						{								
 							it->wrappedIdxMemory = 1;
-							it->lastIdxIterPage = 0;	/* Wrapped around */
+							it->lastIdxIterPage = 0;	/* Wrapped around */							
 						}
 						if (state->wrappedIdxMemory == 0 || it->wrappedIdxMemory == 1)
-						{
+						{							
 							if (it->lastIdxIterPage >= state->nextIdxPageWriteId)
 								return 0;		/* No more pages to read */	
 						}
+						
 						if (readIndexPage(state, it->lastIdxIterPage) != 0)
 							return 0;	
 
@@ -566,12 +578,13 @@ int8_t sbitsNext(sbitsState *state, sbitsIterator *it, void **key, void **data)
 						id_t* id = SBITS_GET_MIN_KEY(idxbuf, state);
 						
 						/* Index page may have entries that are earlier than first active data page. Advance iterator beyond them. */
-						it->lastIterPage = *id;					
-						it->lastIdxIterRec += (state->firstDataPageId - *id);
+						it->lastIterPage = *id;	
+						if (state->firstDataPageId > *id)				
+							it->lastIdxIterRec += (state->firstDataPageId - *id);						
 						if (it->lastIdxIterRec >= cnt)
 						{	/* Jump ahead pages in the index */ /* TODO: Could improve this so do not read first page if know it will not be useful */
 							it->lastIdxIterPage += it->lastIdxIterRec / state->maxIdxRecordsPerPage -1;  // -1 as already performed increment
-							printf("Jumping ahead pages to: %d\n", it->lastIdxIterPage);
+							// printf("Jumping ahead pages to: %d\n", it->lastIdxIterPage);
 						}
 					}
 				
@@ -590,7 +603,7 @@ int8_t sbitsNext(sbitsState *state, sbitsIterator *it, void **key, void **data)
 					continue; /* Read next index block */			
 				}
 readPage:				
-												
+				// printf("Read page: %lu\n", readPageId);			
 				if (readPage(state, readPageId) != 0)
 					return 0;		
 
@@ -779,7 +792,7 @@ id_t writeIndexPage(sbitsState *state, void *buffer)
 				Page number to read
 @return		Return 0 if success, -1 if error.
 */
-int8_t readPage(sbitsState *state, int pageNum)
+int8_t readPage(sbitsState *state, id_t pageNum)
 {   
 	/* Check if page is currently in buffer */ 
 	if (pageNum == state->bufferedPageId)
@@ -813,7 +826,7 @@ int8_t readPage(sbitsState *state, int pageNum)
 				Page number to read
 @return		Return 0 if success, -1 if error.
 */
-int8_t readIndexPage(sbitsState *state, int pageNum)
+int8_t readIndexPage(sbitsState *state, id_t pageNum)
 {   
 	/* Check if page is currently in buffer */ 	
 	if (pageNum == state->bufferedIndexPageId)

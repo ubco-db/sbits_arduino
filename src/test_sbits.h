@@ -174,123 +174,18 @@ int8_t int32Comparator(
     return 0;
 }
 
-/**
- * Runs all tests and collects benchmarks
- */ 
-void runalltests_sbits()
+
+void testIterator(sbitsState *state)
 {
-    int8_t M = 4;    
-    int32_t numRecords = 60000;
-
-    /* Configure SBITS state */
-    sbitsState* state = (sbitsState*) malloc(sizeof(sbitsState));
-
-    state->recordSize = 16;
-    state->keySize = 4;
-    state->dataSize = 12;
-    state->pageSize = 512;
-    state->bufferSizeInBlocks = M;
-    state->buffer  = malloc((size_t) state->bufferSizeInBlocks * state->pageSize);    
-    int8_t* recordBuffer = (int8_t*) malloc(state->recordSize);   
-
-    /* Address level parameters */
-    state->startAddress = 0;
-	state->endAddress = state->pageSize * 2800;	
-	state->eraseSizeInPages = 4;
-    state->parameters = SBITS_USE_MAX_MIN | SBITS_USE_BMAP | SBITS_USE_INDEX;
-    if (SBITS_USING_INDEX(state->parameters) == 1)
-        state->endAddress += state->pageSize * (state->eraseSizeInPages *2);    
-
-    /* TODO: Setup for data and bitmap comparison functions */
-    state->inBitmap = inBitmapInt16;
-    state->updateBitmap = updateBitmapInt16;
-    state->compareKey = int32Comparator;
-    state->compareData = int32Comparator;
-
-    /* Initialize SBITS structure with parameters */
-    if (sbitsInit(state) != 0)
-    {   
-        printf("Initialization error.\n");
-        return;
-    }
-
-    /* Insert records into structure */    
-
-    /* Data record is empty. Only need to reset to 0 once as reusing struct. */    
-    int32_t i;
-    for (i = 0; i < state->recordSize-4; i++) // 4 is the size of the key
-    {
-        recordBuffer[i + sizeof(int32_t)] = 0;
-    }
-
-    uint32_t start = millis();
-
-    for (i = 0; i < numRecords; i++)
-    {        
-        *((int32_t*) recordBuffer) = i;        
-        *((int32_t*) (recordBuffer+4)) = (i%100);    
-         sbitsPut(state, recordBuffer, (void*) (recordBuffer + 4));                   
-    }    
-
-
-    /* Verify stored all records successfully */
-    sbitsFlush(state);
-    fflush(state->file);
-
-    uint32_t end = millis();
-    printf("Elapsed Time: %lu ms\n", (end - start));
-    printf("Records inserted: %d\n", numRecords);
-
-    printStats(state);
-
-    start = millis();
-    /* Verify that all values can be found in tree */
-    for (i = numRecords - 800; i < numRecords; i++)          
-    { 
-        int32_t key = i;        
-        int8_t result = sbitsGet(state, &key, recordBuffer);
-        if (i <= 59276) // if (i <= 9512) 9280
-        {   /* Key not supposed to be found */
-        }
-        else
-        {
-            if (result != 0) 
-                printf("ERROR: Failed to find: %d\n", key);    
-            if (*((int32_t*) recordBuffer) != key%100)
-            {   printf("ERROR: Wrong data for: %d\n", key);
-                printf("Key: %d Data: %d\n", key, *((int32_t*) recordBuffer));
-            }
-        }
-    }
-
-    end = millis();
-    printf("Elapsed Time: %lu ms\n", (end - start));
-    printf("Records queried: %d\n", numRecords);
-    printStats(state); 
-    
-    int32_t key = -1;
-    int8_t result = sbitsGet(state, &key, recordBuffer);
-    if (result == 0) 
-        printf("Error1: Key found: %d\n", key);
-
-    key = 350000;
-    result = sbitsGet(state, &key, recordBuffer);
-    if (result == 0) 
-        printf("Error2: Key found: %d\n", key);
-    
-    free(recordBuffer);
-    
     /* Iterator with filter on keys */
-    
+    uint32_t i, start, end;
     sbitsIterator it;
-    int mv = 1;     // For all records, select mv = 1.
+    uint32_t mv = 1;     
     it.minKey = &mv;
-    int v = 1299;
-    // it.maxKey = &v;
+    uint32_t v = 1299;    
     it.maxKey = NULL;
-    int32_t md = 90;
+    uint32_t md = 90;
     it.minData = &md;
-    // it.minData = NULL;
     it.maxData = NULL;    
 
     resetStats(state);
@@ -343,8 +238,247 @@ void runalltests_sbits()
     printf("Elapsed Time: %lu ms\n", (end - start));   
     printStats(state); 
     
+}
+
+/**
+ * Runs all tests and collects benchmarks
+ */ 
+void runalltests_sbits()
+{
+    printf("\nSTARTING SBITS TESTS.\n");
+
+    int8_t M = 4;    
+    int32_t numRecords = 100000;
+    uint32_t numSteps = 10, stepSize = numRecords / numSteps;
+    count_t r, numRuns = 3, l;
+    uint32_t times[numSteps][numRuns];
+    uint32_t reads[numSteps][numRuns];
+    uint32_t writes[numSteps][numRuns];
+    uint32_t overwrites[numSteps][numRuns];
+    uint32_t hits[numSteps][numRuns];    
+    uint32_t rtimes[numSteps][numRuns];
+    uint32_t rreads[numSteps][numRuns];
+    uint32_t rhits[numSteps][numRuns];
+
+    
+    for (r=0; r < numRuns; r++)
+    {
+        /* Configure SBITS state */
+        sbitsState* state = (sbitsState*) malloc(sizeof(sbitsState));
+
+        state->recordSize = 16;
+        state->keySize = 4;
+        state->dataSize = 12;
+        state->pageSize = 512;
+        state->bufferSizeInBlocks = M;
+        state->buffer  = malloc((size_t) state->bufferSizeInBlocks * state->pageSize);    
+        int8_t* recordBuffer = (int8_t*) malloc(state->recordSize);   
+
+        /* Address level parameters */
+        state->startAddress = 0;
+        state->endAddress = state->pageSize * numRecords / 10;  /* Modify this value lower to test wrap around */	
+        state->eraseSizeInPages = 4;
+        state->parameters = SBITS_USE_MAX_MIN | SBITS_USE_BMAP | SBITS_USE_INDEX;
+        if (SBITS_USING_INDEX(state->parameters) == 1)
+            state->endAddress += state->pageSize * (state->eraseSizeInPages *2);    
+        // state->parameters =  0;
+
+        /* Setup for data and bitmap comparison functions */
+        state->inBitmap = inBitmapInt16;
+        state->updateBitmap = updateBitmapInt16;
+        state->compareKey = int32Comparator;
+        state->compareData = int32Comparator;
+
+        /* Initialize SBITS structure with parameters */
+        if (sbitsInit(state) != 0)
+        {   
+            printf("Initialization error.\n");
+            return;
+        }        
+
+        /* Data record is empty. Only need to reset to 0 once as reusing struct. */    
+        int32_t i;
+        for (i = 0; i < state->recordSize-4; i++) // 4 is the size of the key
+        {
+            recordBuffer[i + sizeof(int32_t)] = 0;
+        }
+
+        /* Insert records into structure */    
+        uint32_t start = millis();
+
+        for (i = 0; i < numRecords; i++)
+        {        
+            *((int32_t*) recordBuffer) = i;        
+            *((int32_t*) (recordBuffer+4)) = (i%100);    
+            sbitsPut(state, recordBuffer, (void*) (recordBuffer + 4));  
+
+            if (i % stepSize == 0)
+            {           
+                printf("Num: %lu KEY: %lu\n", i, i);                
+                l = i / stepSize -1;
+                if (l < numSteps && l >= 0)
+                {
+                    times[l][r] = millis()-start;
+                    reads[l][r] = state->numReads;
+                    writes[l][r] = state->numWrites;
+                    overwrites[l][r] = 0;
+                    hits[l][r] = state->bufferHits;                     
+                }
+            }                     
+        }    
+        
+        sbitsFlush(state);
+        fflush(state->file);
+        uint32_t end = millis();
+
+        l = numSteps-1;
+        times[l][r] = end-start;
+        reads[l][r] = state->numReads;
+        writes[l][r] = state->numWrites;
+        overwrites[l][r] = 0;
+        hits[l][r] = state->bufferHits;
+      
+        printf("Elapsed Time: %lu ms\n", (end - start));
+        printf("Records inserted: %lu\n", numRecords);
+
+        printStats(state);
+        resetStats(state);
+
+        /* Verify that all values can be found and test query performance */    
+        start = millis();
+               
+        for (i = 0; i < numRecords; i++)          
+        { 
+            int32_t key = i;        
+            int8_t result = sbitsGet(state, &key, recordBuffer);
+            
+            if (result != 0) 
+                printf("ERROR: Failed to find: %lu\n", key);    
+            if (*((int32_t*) recordBuffer) != key%100)
+            {   printf("ERROR: Wrong data for: %lu\n", key);
+                printf("Key: %lu Data: %lu\n", key, *((int32_t*) recordBuffer));
+                return;
+            }    
+
+            if (i % stepSize == 0)
+            {                                                         
+                l = i / stepSize - 1;
+                if (l < numSteps && l >= 0)
+                {
+                    rtimes[l][r] = millis()-start;
+                    rreads[l][r] = state->numReads;                    
+                    rhits[l][r] = state->bufferHits;                     
+                }
+            }     
+        }
+
+        end = millis();
+        printf("Elapsed Time: %lu ms\n", (end - start));
+        printf("Records queried: %lu\n", i);
+        l = numSteps-1;       
+        rtimes[l][r] = millis()-start;
+        rreads[l][r] = state->numReads;                    
+        rhits[l][r] = state->bufferHits;  
+
+        printStats(state); 
+            
+        // Optional: Test iterator
+        // testIterator(state);
+        // printStats(state); 
+
+        free(recordBuffer);
+        fclose(state->file);
+        free(state->buffer);
+        free(state);       
+    }
+    
     printf("\nComplete");
 
-    fclose(state->file);
-    free(state->buffer);
+    // Prints results
+    uint32_t sum;
+    for (count_t i=1; i <= numSteps; i++)
+    {
+        printf("Stats for %lu:\n", i*stepSize);
+    
+        printf("Reads:   ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += reads[i-1][r];
+            printf("\t%lu", reads[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+
+        printf("Writes: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += writes[i-1][r];
+            printf("\t%lu", writes[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+        
+        printf("Overwrites: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += overwrites[i-1][r];
+            printf("\t%lu", overwrites[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+        
+        printf("Totwrites: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += overwrites[i-1][r] + writes[i-1][r];
+            printf("\t%lu", overwrites[i-1][r] + writes[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+
+        printf("Buffer hits: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += hits[i-1][r];
+            printf("\t%lu", hits[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+        
+        printf("Write Time: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += times[i-1][r];
+            printf("\t%lu", times[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+        
+        printf("R Time: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += rtimes[i-1][r];
+            printf("\t%lu", rtimes[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+
+        printf("R Reads: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += rreads[i-1][r];
+            printf("\t%lu", rreads[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+
+        printf("R Buffer hits: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += rhits[i-1][r];
+            printf("\t%lu", rhits[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+    }
 }

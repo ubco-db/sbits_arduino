@@ -250,7 +250,7 @@ int8_t sbitsFlush(sbitsState *state);
 				Page number to read
 @return		Return 0 if success, -1 if error.
 */
-int8_t readPage(sbitsState *state, int pageNum);
+int8_t readPage(sbitsState *state, id_t pageNum);
 
 
 /**
@@ -261,7 +261,7 @@ int8_t readPage(sbitsState *state, int pageNum);
 				Page number to read
 @return		Return 0 if success, -1 if error.
 */
-int8_t readIndexPage(sbitsState *state, int pageNum);
+int8_t readIndexPage(sbitsState *state, id_t pageNum);
 
 
 /**
