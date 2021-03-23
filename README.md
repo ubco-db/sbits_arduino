@@ -22,7 +22,7 @@ SBITS is a high performance embedded data storage and index structure for time s
 
 ## Documentation
 
-A paper describing SBITS use for time series indexing is [available from the publisher](https://www.scitepress.org/Link.aspx?doi=10.5220/0010318800920099) and a [pre-print is also available]([SBITS_time_series_index.pdf]).
+A paper describing SBITS use for time series indexing is [available from the publisher](https://www.scitepress.org/Link.aspx?doi=10.5220/0010318800920099) and a [pre-print is also available](SBITS_time_series_index.pdf).
 
 ## Usage
 
