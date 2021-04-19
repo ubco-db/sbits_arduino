@@ -42,6 +42,10 @@
 
 #include "sbits.h"
 
+/**
+ * Use binary search instead of value-based search
+ */
+#define USE_BINARY_SEARCH 	1
 
 void initBufferPage(sbitsState *state, int pageNum)
 {
@@ -119,7 +123,7 @@ int8_t sbitsInit(sbitsState *state)
 	state->wrappedMemory = 0;
 
 	/* Calculate block header size */
-	/* Header size fixed: 14 bytes: 4 byte id, 4 bytes start and end timestamp, 2 for record count. */	
+	/* Header size fixed: 8 bytes: 4 byte id, 2 for record count, 2 for bitmap. */	
 	state->headerSize = 8;
 	if (SBITS_USING_MAX_MIN(state->parameters))
 		state->headerSize += state->keySize*2 + state->dataSize*2;
@@ -130,8 +134,7 @@ int8_t sbitsInit(sbitsState *state)
 
 	/* Calculate number of records per page */
 	state->maxRecordsPerPage = (state->pageSize - state->headerSize) / state->recordSize;
-
-	printf("Max records per page: %d\n", state->maxRecordsPerPage);
+	printf("Header size: %d  Records per page: %d\n", state->headerSize, state->maxRecordsPerPage);	
 
 	/* Allocate first page of buffer as output page */
 	initBufferPage(state, 0);
@@ -264,7 +267,18 @@ int8_t sbitsPut(sbitsState *state, void* key, void *data)
 		}
 
 		/* Update estimate of average key difference. */
-		state->avgKeyDiff = ( *((int32_t*) sbitsGetMaxKey(state, state->buffer)) - *((int32_t*)sbitsGetMinKey(state, state->buffer))) / (state->maxRecordsPerPage-1); 
+		int32_t numBlocks = state->nextPageWriteId-1;		
+		if (state->nextPageWriteId < state->firstDataPage)
+		{	/* Wrapped around in memory and first data page is after the next page that will write */
+			numBlocks = state->endDataPage-state->firstDataPage+1+state->nextIdxPageWriteId;
+		}
+		if (numBlocks == 0)
+			numBlocks = 1;
+
+		// #ifndef USE_BINARY_SEARCH
+		state->avgKeyDiff = ( *((int32_t*) sbitsGetMaxKey(state, state->buffer)) - state->minKey) / numBlocks / (state->maxRecordsPerPage-1); 
+		// printf("Avg key diff: %lu\n", state->avgKeyDiff);
+		// #endif
 
 		count = 0;
 		initBufferPage(state, 0);		
@@ -378,57 +392,107 @@ id_t sbitsSearchNode(sbitsState *state, void *buffer, void* key, id_t pageId, in
 int8_t sbitsGet(sbitsState *state, void* key, void *data)
 {
 	int32_t pageId;
+	int32_t first=0, last;
+	void *buf;
+	int16_t numReads = 0;
+	
 
+	/* Determine last page */
+ 	buf = state->buffer + state->pageSize;
+	if (state->nextPageWriteId < state->firstDataPage)
+	{	/* Wrapped around in memory and first data page is after the next page that will write */
+		last = state->endDataPage-state->firstDataPage+1+state->nextIdxPageWriteId;
+	}
+	else
+	{
+		last = state->nextPageWriteId-1;
+	}
+
+	#ifndef USE_BINARY_SEARCH
 	/* Perform a modified binary search that uses info on key location in sequence for first placement. */
 	if (state->compareKey(key, (void*) &(state->minKey)) < 0)
 		pageId = 0;
 	else
 	{
-	 	pageId = (*((int32_t*)key) - state->minKey) / state->maxRecordsPerPage * state->avgKeyDiff;
+	 	pageId = (*((int32_t*)key) - state->minKey) / (state->maxRecordsPerPage * state->avgKeyDiff);
 
-		if (pageId > state->endDataPage || (state->wrappedMemory == 0 && pageId > state->nextPageId))
-			pageId = state->nextPageId;		/* Logical page would be beyond maximum. Set to last page. */
+		if (pageId > state->endDataPage || (state->wrappedMemory == 0 && pageId >= state->nextPageWriteId))
+			pageId = state->nextPageWriteId-1;		/* Logical page would be beyond maximum. Set to last page. */
 	}		
-
-	/* Move logical page number to physical page id based on location of first data page */
-	pageId = pageId + state->firstDataPage;
-	if (pageId >= state->endDataPage)
-		pageId = pageId - state->endDataPage;
-
-	void *buf;
-	buf = state->buffer + state->pageSize;
-	if (readPage(state, pageId) != 0)
-		return -1;
-
-	/* This is linear search after pick starting page. Change to be binary. */
-	/* Advance to correct page as required */
-	while (state->compareKey(key,sbitsGetMinKey(state,buf)) < 0)
-	{					
-		if (pageId == state->firstDataPage)
-			return -1;	/* not found - search key is less than minimum value in first data page*/
-		
-		pageId--;
-		if (pageId < 0 && state->wrappedMemory == 1)
-			pageId = state->endDataPage;		
-				
-		if (readPage(state, pageId) != 0)
-			return -1;
-	}	
-
+	int32_t offset = 0;
 	
-	while (state->compareKey(key,sbitsGetMaxKey(state,buf)) > 0)
+	while (1)
 	{
-		printf("MK: %d\n", *((int32_t*) sbitsGetMaxKey(state,buf)));
-		pageId++;
-		if (pageId > state->endDataPage)
-			pageId = pageId - state->endDataPage;
+		/* Move logical page number to physical page id based on location of first data page */
+		int32_t physPageId = pageId + state->firstDataPage;
+		if (physPageId >= state->endDataPage)
+			physPageId = physPageId - state->endDataPage;
 
-
-		if (pageId == state->nextPageId)
-			return -1;	/* not found */		
-		if (readPage(state, pageId) != 0)
+		// printf("Page id: %d  Offset: %d\n", pageId, offset);
+		/* Read page into buffer */
+		if (readPage(state, physPageId) != 0)
 			return -1;
-	}		
+		numReads++;
+
+		if (first >= last)
+			break;
+
+		if (state->compareKey(key,sbitsGetMinKey(state,buf)) < 0)
+		{	/* Key is less than smallest record in block. */
+			last = pageId - 1;	
+			offset = (*((int32_t*) key) - *((int32_t*) sbitsGetMinKey(state,buf))) / state->maxRecordsPerPage / ((int32_t) state->avgKeyDiff) - 1;					
+			if (pageId + offset < first)
+				offset = first-pageId;
+			pageId += offset;
+			
+		}
+		else if (state->compareKey(key,sbitsGetMaxKey(state,buf)) > 0)
+		{	/* Key is larger than largest record in block. */
+			first = pageId + 1;
+			offset = (*((int32_t*) key) - *((int32_t*) sbitsGetMaxKey(state,buf))) / (state->maxRecordsPerPage * state->avgKeyDiff) + 1;	
+			if (pageId + offset > last)
+				offset = last-pageId;
+			pageId += offset;
+		}
+		else
+		{	/* Found correct block */
+			break;
+		}
+	}
+	#else
+	/* Regular binary search */
+	pageId = (first+last)/2;
+	while (1)
+	{
+		/* Move logical page number to physical page id based on location of first data page */
+		int32_t physPageId = pageId + state->firstDataPage;
+		if (physPageId >= state->endDataPage)
+			physPageId = physPageId - state->endDataPage;
+
+		/* Read page into buffer */
+		if (readPage(state, physPageId) != 0)
+			return -1;
+		numReads++;
+
+		if (first >= last)
+			break;
+
+		if (state->compareKey(key,sbitsGetMinKey(state,buf)) < 0)
+		{	/* Key is less than smallest record in block. */
+			last = pageId - 1;	
+			pageId = (first+last)/2;						
+		}
+		else if (state->compareKey(key,sbitsGetMaxKey(state,buf)) > 0)
+		{	/* Key is larger than largest record in block. */
+			first = pageId + 1;
+			pageId = (first+last)/2;			
+		}
+		else
+		{	/* Found correct block */
+			break;
+		}
+	}
+	#endif		
 		 
 	id_t nextId = sbitsSearchNode(state, buf, key, nextId, 0);
 	if (nextId != -1)

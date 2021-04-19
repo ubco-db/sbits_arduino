@@ -258,8 +258,19 @@ void runalltests_sbits()
     uint32_t rtimes[numSteps][numRuns];
     uint32_t rreads[numSteps][numRuns];
     uint32_t rhits[numSteps][numRuns];
+    int8_t  seqdata = 0;
+    SD_FILE    *infile;
+     uint32_t minRange, maxRange;
 
-    
+    if (seqdata != 1)
+    {   /* Open file to read input records */
+        infile = fopen("data/sea100K.bin", "r+b");
+        minRange = 1314604380;
+        maxRange = 1609487580;
+        // infile = fopen("data/uwa500K.bin", "r+b");
+        
+    }
+
     for (r=0; r < numRuns; r++)
     {
         /* Configure SBITS state */
@@ -277,7 +288,7 @@ void runalltests_sbits()
         state->startAddress = 0;
         state->endAddress = state->pageSize * numRecords / 10;  /* Modify this value lower to test wrap around */	
         state->eraseSizeInPages = 4;
-        state->parameters = SBITS_USE_MAX_MIN | SBITS_USE_BMAP | SBITS_USE_INDEX;
+        state->parameters = SBITS_USE_BMAP | SBITS_USE_INDEX;
         if (SBITS_USING_INDEX(state->parameters) == 1)
             state->endAddress += state->pageSize * (state->eraseSizeInPages *2);    
         // state->parameters =  0;
@@ -302,30 +313,74 @@ void runalltests_sbits()
             recordBuffer[i + sizeof(int32_t)] = 0;
         }
 
-        /* Insert records into structure */    
+        /* Insert records into structure */  
+        printf("\n\nINSERT TEST:\n");  
         uint32_t start = millis();
 
-        for (i = 0; i < numRecords; i++)
-        {        
-            *((int32_t*) recordBuffer) = i;        
-            *((int32_t*) (recordBuffer+4)) = (i%100);    
-            sbitsPut(state, recordBuffer, (void*) (recordBuffer + 4));  
+        if (seqdata == 1)
+        {
+            for (i = 0; i < numRecords; i++)
+            {        
+                *((int32_t*) recordBuffer) = i;        
+                *((int32_t*) (recordBuffer+4)) = (i%100);    
+                sbitsPut(state, recordBuffer, (void*) (recordBuffer + 4));  
 
-            if (i % stepSize == 0)
-            {           
-                printf("Num: %lu KEY: %lu\n", i, i);                
-                l = i / stepSize -1;
-                if (l < numSteps && l >= 0)
-                {
-                    times[l][r] = millis()-start;
-                    reads[l][r] = state->numReads;
-                    writes[l][r] = state->numWrites;
-                    overwrites[l][r] = 0;
-                    hits[l][r] = state->bufferHits;                     
+                if (i % stepSize == 0)
+                {           
+                    printf("Num: %lu KEY: %lu\n", i, i);                
+                    l = i / stepSize -1;
+                    if (l < numSteps && l >= 0)
+                    {
+                        times[l][r] = millis()-start;
+                        reads[l][r] = state->numReads;
+                        writes[l][r] = state->numWrites;
+                        overwrites[l][r] = 0;
+                        hits[l][r] = state->bufferHits;                     
+                    }
+                }                     
+            }    
+        }
+        else
+        {   /* Read data from a file */
+            char infileBuffer[512];
+            int8_t headerSize = 16;
+            i = 0;
+            fseek(infile, 0, SEEK_SET);
+            while (1)
+            {
+                /* Read page */
+                if (0 == fread(infileBuffer, state->pageSize, 1, infile))
+                    break;
+                        
+                /* Process all records on page */
+                int16_t count = *((int16_t*) (infileBuffer+4));                  
+                for (int j=0; j < count; j++)
+                {	
+                    void *buf = (infileBuffer + headerSize + j*state->recordSize);				
+                              
+                    sbitsPut(state, buf, (void*) ((char*) buf + 4));  
+                    // if ( i < 100)
+                    //    printf("%lu %d %d %d\n", *((uint32_t*) buf), *((int32_t*) (buf+4)), *((int32_t*) (buf+8)), *((int32_t*) (buf+12)));   
+
+                    if (i % stepSize == 0)
+                    {           
+                        printf("Num: %lu KEY: %lu\n", i, *((int32_t*) buf));                
+                        l = i / stepSize -1;
+                        if (l < numSteps && l >= 0)
+                        {
+                            times[l][r] = millis()-start;
+                            reads[l][r] = state->numReads;
+                            writes[l][r] = state->numWrites;
+                            overwrites[l][r] = 0;
+                            hits[l][r] = state->bufferHits;                     
+                        }
+                    }  
+                    i++;  
                 }
-            }                     
-        }    
-        
+            }  
+            numRecords = i;    
+        }
+
         sbitsFlush(state);
         fflush(state->file);
         uint32_t end = millis();
@@ -344,31 +399,166 @@ void runalltests_sbits()
         resetStats(state);
 
         /* Verify that all values can be found and test query performance */    
+        printf("\n\nQUERY TEST:\n");
         start = millis();
-               
-        for (i = 0; i < numRecords; i++)          
-        { 
-            int32_t key = i;        
-            int8_t result = sbitsGet(state, &key, recordBuffer);
-            
-            if (result != 0) 
-                printf("ERROR: Failed to find: %lu\n", key);    
-            if (*((int32_t*) recordBuffer) != key%100)
-            {   printf("ERROR: Wrong data for: %lu\n", key);
-                printf("Key: %lu Data: %lu\n", key, *((int32_t*) recordBuffer));
-                return;
-            }    
 
-            if (i % stepSize == 0)
-            {                                                         
-                l = i / stepSize - 1;
-                if (l < numSteps && l >= 0)
+        if (seqdata == 1)
+        {  
+            for (i = 0; i < numRecords; i++)          
+            { 
+                int32_t key = i;        
+                int8_t result = sbitsGet(state, &key, recordBuffer);
+                
+                if (result != 0) 
+                    printf("ERROR: Failed to find: %lu\n", key);    
+                if (*((int32_t*) recordBuffer) != key%100)
+                {   printf("ERROR: Wrong data for: %lu\n", key);
+                    printf("Key: %lu Data: %lu\n", key, *((int32_t*) recordBuffer));
+                    return;
+                }    
+
+                if (i % stepSize == 0)
+                {                                                         
+                    l = i / stepSize - 1;
+                    if (l < numSteps && l >= 0)
+                    {
+                        rtimes[l][r] = millis()-start;
+                        rreads[l][r] = state->numReads;                    
+                        rhits[l][r] = state->bufferHits;                     
+                    }
+                }     
+            }
+        }
+        else
+        {   /* Data from file */
+            char infileBuffer[512];
+            int8_t headerSize = 16;
+            i = 0;
+            int8_t queryType = 2;
+
+            if (queryType == 1)
+            {   /* Query each record from original data set. */
+                fseek(infile, 0, SEEK_SET);
+
+                while (1)
                 {
-                    rtimes[l][r] = millis()-start;
-                    rreads[l][r] = state->numReads;                    
-                    rhits[l][r] = state->bufferHits;                     
+                    /* Read page */
+                    if (0 == fread(infileBuffer, state->pageSize, 1, infile))
+                        break;
+                            
+                    /* Process all records on page */
+                    int16_t count = *((int16_t*) (infileBuffer+4));                  
+                    for (int j=0; j < count; j++)
+                    {	
+                        void *buf = (infileBuffer + headerSize + j*state->recordSize);				
+                        int32_t* key = (int32_t*)  buf;
+                    
+                        int8_t result = sbitsGet(state, key, recordBuffer);  
+                        if (result != 0) 
+                            printf("ERROR: Failed to find: %lu\n", *key);    
+                        if (*((int32_t*) recordBuffer) != *((int32_t*) ((char*) buf+4)))
+                        {   
+                            printf("ERROR: Wrong data for: Key: %lu Data: %lu ", *key, *((int32_t*) recordBuffer));
+                            printf("%lu %d %d %d\n", *((uint32_t*) buf), *((int32_t*) ((char*) buf+4)), *((int32_t*) ((char*) buf+8)), *((int32_t*) ((char*) buf+12))); 
+                            result = sbitsGet(state, key, recordBuffer);  
+                            return;
+                        } 
+
+                        if (i % stepSize == 0)
+                        {           
+                            printf("Num: %lu KEY: %lu\n", i, *key);                
+                            l = i / stepSize -1;
+                            if (l < numSteps && l >= 0)
+                            {
+                                times[l][r] = millis() - start;
+                                reads[l][r] = state->numReads;
+                                writes[l][r] = state->numWrites;
+                                overwrites[l][r] = 0;
+                                hits[l][r] = state->bufferHits;                     
+                            }
+                        }  
+                        i++;  
+                    }
+                }  
+            }
+            else if (queryType == 2)
+            {   /* Query random values in range. May not exist in data set. */
+                i = 0;
+                int32_t num = maxRange - minRange;
+                printf("Num :%d Rand madx: %d\n", num, RAND_MAX);
+                while (i < numRecords)
+                {                    
+                    double scaled = ((double)rand()*(double)rand())/RAND_MAX/RAND_MAX;				
+                    int32_t key = (num+1)*scaled + minRange;  
+                                   
+                    // printf("Key :%d\n", key);           
+                    sbitsGet(state, &key, recordBuffer);                          
+
+                    if (i % stepSize == 0)
+                    {                                                         
+                        l = i / stepSize - 1;
+                        printf("Num: %lu KEY: %lu\n", i, key);     
+                        if (l < numSteps && l >= 0)
+                        {
+                            rtimes[l][r] = millis() - start;
+                            rreads[l][r] = state->numReads;                    
+                            rhits[l][r] = state->bufferHits;                     
+                        }
+                    }     
+                    i++;  
+                }                
+            } 
+            else
+            {   /* Data value query for given value range */                    
+                int32_t *itKey, *itData;    
+                sbitsIterator it;         
+                it.minKey = NULL;    
+                it.maxKey = NULL;
+                int32_t mv = 800;
+                int32_t v = 1000;
+                it.minData = &mv;
+                it.maxData = &v;    
+                int32_t rec, reads;
+
+                start = clock();
+                  mv = 270;
+                for (int i = 0; i < 1000; i++)                
+                // for (int i = 0; i < 16; i++)
+                {              
+                    mv = (rand() % 60 + 30) * 10;
+                    // mv += 30;
+                    v = mv;
+                    
+                    // resetStats(state);                                            
+                    sbitsInitIterator(state, &it);
+                    rec = 0;        
+                    reads = state->numReads;
+                    // printf("Min: %d Max: %d\n", mv, v);
+                    while (sbitsNext(state, &it, (void**) &itKey, (void**) &itData))
+                    {                      
+                        // printf("Key: %d  Data: %d\n", *itKey, *itData);
+                        if ( *((int32_t*)itData) < *( (int32_t*) it.minData) || *((int32_t*)itData) > *( (int32_t*) it.maxData))
+                        {   
+                            printf("Key: %d Data: %d Error\n", *itKey, *itData);
+                        }
+                        rec++;        
+                    }
+                   // printf("Read records: %d\n", rec);                                           
+                    // printStats(state);
+
+                    if (i % 100 == 0)
+                    {                                                         
+                        l = i / 100 - 1;
+                        printf("Num: %lu KEY: %lu Records: %d Reads: %d\n", i, mv, rec, (state->numReads-reads));     
+                        if (l < numSteps && l >= 0)
+                        {
+                            rtimes[l][r] = millis() - start;
+                            rreads[l][r] = state->numReads;                    
+                            rhits[l][r] = state->bufferHits;                     
+                        }
+                    }      
                 }
-            }     
+            } 
         }
 
         end = millis();
