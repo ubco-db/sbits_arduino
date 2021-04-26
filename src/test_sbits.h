@@ -161,7 +161,38 @@ int8_t inBitmapInt16(void *data, void *bm)
     return tmpbm & *bmval;
 }
 
+/* A 64-bit bitmap on a 32-bit int value */
+void updateBitmapInt64(void *data, void *bm)
+{
+    int32_t val = *((int32_t*) data);    
+      
+    int16_t stepSize = 10;    // Temperature data in F. Scaled by 10. */    
+    int32_t current = 320;
+    int8_t bmsize = 63;
+    int8_t count = 0;
+    
+    while (val > current && count < bmsize)
+    {
+        current += stepSize;
+        count++;
+    }
+    uint8_t b = 128;
+    int8_t offset = count / 8;    
+    b = b >> (count & 7);
+    
+    *( (char*) ((char*) bm + offset)) =  *( (char*) ((char*)bm + offset)) | b;                 
+}	
 
+int8_t inBitmapInt64(void *data, void *bm)
+{    
+    uint64_t* bmval = (uint64_t*) bm;
+
+    uint64_t tmpbm = 0;
+    updateBitmapInt64(data, &tmpbm);
+
+    // Return a number great than 1 if there is an overlap
+    return tmpbm & *bmval;
+}
 
 int8_t int32Comparator(
         void			*a,
@@ -266,9 +297,16 @@ void runalltests_sbits()
     {   /* Open file to read input records */
         infile = fopen("data/sea100K.bin", "r+b");
         minRange = 1314604380;
-        maxRange = 1609487580;
-        // infile = fopen("data/uwa500K.bin", "r+b");
-        
+        maxRange = 1609487580;        
+        numRecords = 100000;
+
+        /*
+        infile = fopen("data/uwa500K.bin", "r+b");
+        minRange = 946713600;
+        maxRange = 977144040;
+        numRecords = 500000;
+        */
+        stepSize = numRecords / numSteps;
     }
 
     for (r=0; r < numRuns; r++)
@@ -289,13 +327,21 @@ void runalltests_sbits()
         state->endAddress = state->pageSize * numRecords / 10;  /* Modify this value lower to test wrap around */	
         state->eraseSizeInPages = 4;
         state->parameters = SBITS_USE_BMAP | SBITS_USE_INDEX;
+        // state->parameters =  0;
         if (SBITS_USING_INDEX(state->parameters) == 1)
             state->endAddress += state->pageSize * (state->eraseSizeInPages *2);    
-        // state->parameters =  0;
+        if (SBITS_USING_BMAP(state->parameters))
+            state->bitmapSize = 8;
 
         /* Setup for data and bitmap comparison functions */
+        /* 16-bit bitmap */
+        /*
         state->inBitmap = inBitmapInt16;
         state->updateBitmap = updateBitmapInt16;
+        */
+        /* 64-bit bitmap */
+        state->inBitmap = inBitmapInt64;
+        state->updateBitmap = updateBitmapInt64;
         state->compareKey = int32Comparator;
         state->compareData = int32Comparator;
 
@@ -521,12 +567,14 @@ void runalltests_sbits()
                 int32_t rec, reads;
 
                 start = clock();
-                  mv = 270;
-                for (int i = 0; i < 1000; i++)                
+                  mv = 280;
+                // for (int i = 0; i < 1000; i++)                
                 // for (int i = 0; i < 16; i++)
+                 for (int i = 0; i < 65; i++)
                 {              
-                    mv = (rand() % 60 + 30) * 10;
+                    // mv = (rand() % 60 + 30) * 10;
                     // mv += 30;
+                    mv += 10;
                     v = mv;
                     
                     // resetStats(state);                                            

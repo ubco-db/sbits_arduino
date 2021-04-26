@@ -45,7 +45,25 @@
 /**
  * Use binary search instead of value-based search
  */
-#define USE_BINARY_SEARCH 	1
+// #define USE_BINARY_SEARCH 	1
+
+void printBitmap(char* bm)
+{	
+	for (int8_t i = 0; i <= 7; i++)
+	{
+		printf(" "BYTE_TO_BINARY_PATTERN"", BYTE_TO_BINARY(*(bm+i)));
+	}
+	printf("\n");	
+}
+
+int8_t bitmapOverlap(uint8_t* bm1, uint8_t* bm2, int8_t size)
+{
+	for (int8_t i=0; i < size; i++)
+		if ( (*((uint8_t*) (bm1 + i)) & *((uint8_t*) (bm2 + i))) >= 1)
+			return 1;
+
+	return 0;
+}
 
 void initBufferPage(sbitsState *state, int pageNum)
 {
@@ -123,8 +141,8 @@ int8_t sbitsInit(sbitsState *state)
 	state->wrappedMemory = 0;
 
 	/* Calculate block header size */
-	/* Header size fixed: 8 bytes: 4 byte id, 2 for record count, 2 for bitmap. */	
-	state->headerSize = 8;
+	/* Header size fixed: 8 bytes: 4 byte id, 2 for record count, X for bitmap. */	
+	state->headerSize = 6 + state->bitmapSize;
 	if (SBITS_USING_MAX_MIN(state->parameters))
 		state->headerSize += state->keySize*2 + state->dataSize*2;
 
@@ -181,14 +199,15 @@ int8_t sbitsInit(sbitsState *state)
 				return -1;
 			}
 
-			state->maxIdxRecordsPerPage = (state->pageSize - 16) / sizeof(count_t);		/* 4 for id, 2 for count, 2 for bitmap (not used), 4 for minKey (pageId), 4 for maxKey (pageId) */
+			state->maxIdxRecordsPerPage = (state->pageSize - 16) / sizeof(count_t);		/* 4 for id, 2 for count, 2 unused, 4 for minKey (pageId), 4 for maxKey (pageId) */
 
 			/* Allocate third page of buffer as index output page */
 			initBufferPage(state, SBITS_INDEX_WRITE_BUFFER);
 
 			/* Add page id to minimum value spot in page */
 			void *buf = state->buffer + state->pageSize*(SBITS_INDEX_WRITE_BUFFER);
-			id_t *ptr = (id_t*) SBITS_GET_MIN_KEY(buf, state);
+			// id_t *ptr = (id_t*) SBITS_GET_MIN_KEY(buf, state);
+			id_t* ptr = ((id_t*) (buf + 8));
 			*ptr = state->nextPageId;
 
 			state->nextIdxPageId = 0;
@@ -239,8 +258,8 @@ int8_t sbitsPut(sbitsState *state, void* key, void *data)
 							*((int32_t*) SBITS_GET_MAX_DATA(state->buffer, state))
 							);
 		
-		int16_t *bm = SBITS_GET_BITMAP(state->buffer);
-		printf(" BM: "BM_TO_BINARY_PATTERN"\n", BM_TO_BINARY(*bm));
+		char *bm = SBITS_GET_BITMAP(state->buffer);
+		printBitmap(bm);
 		*/
 		/* Save record in index file */
 		if (state->indexFile != NULL)
@@ -520,12 +539,16 @@ void sbitsInitIterator(sbitsState *state, sbitsIterator *it)
 	{
 		/* Verify that bitmap index is useful (must have set either min or max data value) */
 		if (it->minData != NULL || it->maxData != NULL)		
-		{
+		{	/*
 			uint16_t *bm = malloc(sizeof(uint16_t));		
 			*bm = 0;
 			buildBitmapInt16FromRange(state, it->minData, it->maxData, bm);
+			*/
+			uint64_t *bm = malloc(sizeof(uint64_t));		
+			*bm = 0;
+			buildBitmapInt64FromRange(state, it->minData, it->maxData, bm);
 			
-			printf("Iterator query BM: "BM_TO_BINARY_PATTERN"\n", BM_TO_BINARY(*bm));  	
+			// printBitmap((char*) bm);			
 			it->queryBitmap = bm;
 
 			/* Setup for reading index file */
@@ -534,8 +557,7 @@ void sbitsInitIterator(sbitsState *state, sbitsIterator *it)
 				it->lastIdxIterPage = state->firstIdxPage;
 				it->lastIdxIterRec = 10000;	/* Force to read next index page */	
 				it->wrappedIdxMemory = 0;				
-			}
-			printf("%lu  %lu\n",it->lastIdxIterPage,  state->firstIdxPage);
+			}			
 		}
 	}
 
@@ -562,8 +584,7 @@ int8_t sbitsFlush(sbitsState *state)
 			
 		/* Copy record onto index page */
 		count_t *bm = SBITS_GET_BITMAP(state->buffer);
-		memcpy( (void*) (buf + SBITS_IDX_HEADER_SIZE + sizeof(count_t) * idxcount), bm, sizeof(count_t));
-		// printf("FBM: "BM_TO_BINARY_PATTERN"\n", BM_TO_BINARY(*bm));	
+		memcpy( (void*) (buf + SBITS_IDX_HEADER_SIZE + sizeof(count_t) * idxcount), bm, sizeof(count_t));			
 		
 		/* TODO: Handle case that index buffer is full */				
 		writeIndexPage(state, buf);
@@ -639,9 +660,9 @@ int8_t sbitsNext(sbitsState *state, sbitsIterator *it, void **key, void **data)
 
 						it->lastIdxIterPage++;	
 						it->lastIdxIterRec = 0;
-						cnt = SBITS_GET_COUNT(idxbuf);
-						id_t* id = SBITS_GET_MIN_KEY(idxbuf, state);
-						
+						cnt = SBITS_GET_COUNT(idxbuf);						
+						id_t* id = ((id_t*) (idxbuf + 8));	/* Get min page # for this index page */
+
 						/* Index page may have entries that are earlier than first active data page. Advance iterator beyond them. */
 						it->lastIterPage = *id;	
 						if (state->firstDataPageId > *id)				
@@ -984,6 +1005,71 @@ void buildBitmapInt16FromRange(sbitsState *state, void *min, void *max, void *bm
     else
     {
         while (i < 16)
+        {
+            i++;
+            *bmval = *bmval + val;
+            val = val / 2;
+        }
+    }            
+}	
+
+
+/**
+@brief     	Builds 64-bit bitmap from (min, max) range.
+@param     	state
+                SBITS state structure
+@param		min
+				minimum value (may be NULL)
+@param		max
+				maximum value (may be NULL)
+@param		bm
+				bitmap created
+*/
+void buildBitmapInt64FromRange(sbitsState *state, void *min, void *max, void *bm)
+{
+    uint64_t* bmval = (uint64_t*) bm;
+
+    if (min == NULL && max == NULL)
+    {
+        *bmval = UINT64_MAX;  /* Everything */
+        return;
+    }
+        
+    int8_t i = 0;
+    uint64_t val = (uint64_t) (INT64_MAX)+1;
+    if (min != NULL)
+    {
+        /* Set bits based on min value */
+        state->updateBitmap(min, bm);
+		
+        /* Assume here that bits are set in increasing order based on smallest value */                        
+        /* Find first set bit */
+        while ( (val & *bmval) == 0 && i < 64)
+        {
+            i++;
+            val = val / 2;
+        }
+        val = val / 2;
+        i++;
+    }
+    if (max != NULL)
+    {
+        /* Set bits based on min value */
+		uint64_t prev = *bmval;
+        state->updateBitmap(max, bm);
+		if (*bmval == prev)
+			return;	/* Min and max bit vector are the same */
+
+        while ( (val & *bmval) == 0 && i < 64)
+        {
+            i++;
+            *bmval = *bmval + val;
+            val = val / 2;                 
+        }
+    }
+    else
+    {
+        while (i < 64)
         {
             i++;
             *bmval = *bmval + val;

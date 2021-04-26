@@ -46,8 +46,6 @@ extern "C" {
 #include "file/sd_stdio_c_iface.h"
 #endif
 
-
-
 /* Define type for page ids (physical and logical). */
 typedef uint32_t id_t;
 
@@ -67,7 +65,8 @@ typedef uint16_t count_t;
 /* Offsets with header */
 #define SBITS_COUNT_OFFSET		4
 #define SBITS_BITMAP_OFFSET		6
-#define SBITS_MIN_OFFSET		8
+// #define SBITS_MIN_OFFSET		8
+#define SBITS_MIN_OFFSET		14
 #define SBITS_IDX_HEADER_SIZE	16
 
 #define SBITS_GET_COUNT(x)  	*((count_t *) (x+SBITS_COUNT_OFFSET))
@@ -116,7 +115,7 @@ typedef uint16_t count_t;
 
 typedef struct {
 	SD_FILE *file;								/* File for storing data records. */
-	SD_FILE *indexFile;						/* File for storing index records. */
+	SD_FILE *indexFile;							/* File for storing index records. */
 	id_t 	startAddress;						/* Start address in memory space */
 	id_t 	endAddress;							/* End address in memory space */
 	count_t eraseSizeInPages;					/* Erase size in pages */
@@ -139,6 +138,7 @@ typedef struct {
 	int8_t 	dataSize;							/* Size of data in bytes (fixed-size records) */
 	int8_t 	recordSize;							/* Size of record in bytes (fixed-size records) */
 	int8_t 	headerSize;							/* Size of header in bytes (calculated during init()) */	
+	int8_t 	bitmapSize;							/* Size of bitmap in bytes */
 	id_t 	avgKeyDiff;							/* Estimate for difference between key values. Used for get() to predict location of record. */
 	id_t 	nextPageId;							/* Next logical page id. Page id is an incrementing value and may not always be same as physical page id. */
 	id_t 	nextPageWriteId;					/* Physical page id of next page to write. */	
@@ -319,6 +319,20 @@ Bitmap related functions
 				bitmap created
 */
 void buildBitmapInt16FromRange(sbitsState *state, void *min, void *max, void *bm);
+
+
+/**
+@brief     	Builds 64-bit bitmap from (min, max) range.
+@param     	state
+                SBITS state structure
+@param		min
+				minimum value (may be NULL)
+@param		max
+				maximum value (may be NULL)
+@param		bm
+				bitmap created
+*/
+void buildBitmapInt64FromRange(sbitsState *state, void *min, void *max, void *bm);
 
 #if defined(__cplusplus)
 }
