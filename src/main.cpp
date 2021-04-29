@@ -112,8 +112,9 @@ void setup()
   root.ls(LS_R | LS_DATE | LS_SIZE);
 
   /* Delete any files not needed */
-  // root.remove(root, "myfile.bin");
-  
+  root.remove(root, "datafile.bin");
+  root.remove(root, "idxfile.bin");
+
   SD.begin(4);
   
   runalltests_sbits(); 

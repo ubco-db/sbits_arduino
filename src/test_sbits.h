@@ -278,9 +278,9 @@ void runalltests_sbits()
     printf("\nSTARTING SBITS TESTS.\n");
 
     int8_t M = 4;    
-    int32_t numRecords = 100000;
+    int32_t numRecords = 10000;
     uint32_t numSteps = 10, stepSize = numRecords / numSteps;
-    count_t r, numRuns = 3, l;
+    count_t r, numRuns = 1, l;
     uint32_t times[numSteps][numRuns];
     uint32_t reads[numSteps][numRuns];
     uint32_t writes[numSteps][numRuns];
@@ -291,21 +291,23 @@ void runalltests_sbits()
     uint32_t rhits[numSteps][numRuns];
     int8_t  seqdata = 0;
     SD_FILE    *infile;
-     uint32_t minRange, maxRange;
+    uint32_t minRange, maxRange;
+    char infileBuffer[512];
 
     if (seqdata != 1)
     {   /* Open file to read input records */
+        /*
         infile = fopen("data/sea100K.bin", "r+b");
         minRange = 1314604380;
         maxRange = 1609487580;        
-        numRecords = 100000;
-
-        /*
+        numRecords = 100000 / 10;
+        */
+        
         infile = fopen("data/uwa500K.bin", "r+b");
         minRange = 946713600;
         maxRange = 977144040;
-        numRecords = 500000;
-        */
+        numRecords = 500000 / 50;
+        
         stepSize = numRecords / numSteps;
     }
 
@@ -327,7 +329,7 @@ void runalltests_sbits()
         state->endAddress = state->pageSize * numRecords / 10;  /* Modify this value lower to test wrap around */	
         state->eraseSizeInPages = 4;
         state->parameters = SBITS_USE_BMAP | SBITS_USE_INDEX;
-        // state->parameters =  0;
+        state->parameters =  0;
         if (SBITS_USING_INDEX(state->parameters) == 1)
             state->endAddress += state->pageSize * (state->eraseSizeInPages *2);    
         if (SBITS_USING_BMAP(state->parameters))
@@ -388,7 +390,7 @@ void runalltests_sbits()
         }
         else
         {   /* Read data from a file */
-            char infileBuffer[512];
+            // char infileBuffer[512];
             int8_t headerSize = 16;
             i = 0;
             fseek(infile, 0, SEEK_SET);
@@ -411,7 +413,7 @@ void runalltests_sbits()
                     if (i % stepSize == 0)
                     {           
                         printf("Num: %lu KEY: %lu\n", i, *((int32_t*) buf));                
-                        l = i / stepSize -1;
+                        l = i / stepSize -1;                        
                         if (l < numSteps && l >= 0)
                         {
                             times[l][r] = millis()-start;
@@ -421,12 +423,18 @@ void runalltests_sbits()
                             hits[l][r] = state->bufferHits;                     
                         }
                     }  
-                    i++;  
-                }
+                    i++;      
+                    /* Allows stopping at set number of records instead of reading entire file */
+                    if (i == numRecords)
+                    {   maxRange = *((uint32_t*) buf);
+                        goto doneread;              
+                    }
+                }                 
             }  
             numRecords = i;    
         }
 
+doneread:
         sbitsFlush(state);
         fflush(state->file);
         uint32_t end = millis();
@@ -476,11 +484,10 @@ void runalltests_sbits()
             }
         }
         else
-        {   /* Data from file */
-            char infileBuffer[512];
+        {   /* Data from file */            
             int8_t headerSize = 16;
             i = 0;
-            int8_t queryType = 2;
+            int8_t queryType = 1;
 
             if (queryType == 1)
             {   /* Query each record from original data set. */
@@ -498,7 +505,7 @@ void runalltests_sbits()
                     {	
                         void *buf = (infileBuffer + headerSize + j*state->recordSize);				
                         int32_t* key = (int32_t*)  buf;
-                    
+                     
                         int8_t result = sbitsGet(state, key, recordBuffer);  
                         if (result != 0) 
                             printf("ERROR: Failed to find: %lu\n", *key);    
@@ -516,22 +523,26 @@ void runalltests_sbits()
                             l = i / stepSize -1;
                             if (l < numSteps && l >= 0)
                             {
-                                times[l][r] = millis() - start;
-                                reads[l][r] = state->numReads;
-                                writes[l][r] = state->numWrites;
-                                overwrites[l][r] = 0;
-                                hits[l][r] = state->bufferHits;                     
+                                rtimes[l][r] = millis()-start;
+                                rreads[l][r] = state->numReads;                    
+                                rhits[l][r] = state->bufferHits;                   
                             }
                         }  
                         i++;  
-                    }
+                        if (i == numRecords)    /* Allows ending test after set number of records rather than processing entire file */
+                            goto donetest;
+                    }                    
                 }  
+                donetest:
+                    numRecords = i;
             }
             else if (queryType == 2)
             {   /* Query random values in range. May not exist in data set. */
                 i = 0;
                 int32_t num = maxRange - minRange;
                 printf("Num :%d Rand madx: %d\n", num, RAND_MAX);
+                numRecords = 10000;
+                stepSize = 1000;
                 while (i < numRecords)
                 {                    
                     double scaled = ((double)rand()*(double)rand())/RAND_MAX/RAND_MAX;				
@@ -556,7 +567,7 @@ void runalltests_sbits()
             } 
             else
             {   /* Data value query for given value range */                    
-                int32_t *itKey, *itData;    
+                uint32_t *itKey, *itData;    
                 sbitsIterator it;         
                 it.minKey = NULL;    
                 it.maxKey = NULL;
@@ -566,11 +577,11 @@ void runalltests_sbits()
                 it.maxData = &v;    
                 int32_t rec, reads;
 
-                start = clock();
+                start = millis();
                   mv = 280;
                 // for (int i = 0; i < 1000; i++)                
                 // for (int i = 0; i < 16; i++)
-                 for (int i = 0; i < 65; i++)
+                 for (int32_t i = 0; i < 65; i++) //65
                 {              
                     // mv = (rand() % 60 + 30) * 10;
                     // mv += 30;
@@ -585,19 +596,22 @@ void runalltests_sbits()
                     while (sbitsNext(state, &it, (void**) &itKey, (void**) &itData))
                     {                      
                         // printf("Key: %d  Data: %d\n", *itKey, *itData);
-                        if ( *((int32_t*)itData) < *( (int32_t*) it.minData) || *((int32_t*)itData) > *( (int32_t*) it.maxData))
+                        if ( *((uint32_t*)itData) < *( (uint32_t*) it.minData) || *((uint32_t*)itData) > *( (uint32_t*) it.maxData))
                         {   
-                            printf("Key: %d Data: %d Error\n", *itKey, *itData);
+                            printf("Key: %lu Data: %lu Error\n", *itKey, *itData);
+                            if (rec >= 5)
+                                return;
                         }
                         rec++;        
                     }
                    // printf("Read records: %d\n", rec);                                           
                     // printStats(state);
+                    printf("Num: %lu KEY: %lu Perc: %lu Records: %lu Reads: %lu \n", i, mv, ((state->numReads-reads)*1000/(state->nextPageWriteId-1)), rec, (state->numReads-reads));     
 
                     if (i % 100 == 0)
                     {                                                         
                         l = i / 100 - 1;
-                        printf("Num: %lu KEY: %lu Records: %d Reads: %d\n", i, mv, rec, (state->numReads-reads));     
+                        printf("Num: %lu KEY: %lu Records: %lu Reads: %lu\n", i, mv, rec, (state->numReads-reads));     
                         if (l < numSteps && l >= 0)
                         {
                             rtimes[l][r] = millis() - start;
