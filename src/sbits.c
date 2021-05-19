@@ -65,6 +65,18 @@ int8_t bitmapOverlap(uint8_t* bm1, uint8_t* bm2, int8_t size)
 	return 0;
 }
 
+void initBufferPageHeader(sbitsState *state, int pageNum)
+{
+	/* Initialize page header (first 16 bytes) */
+	uint16_t i = 0;
+	void *buf = state->buffer + pageNum * state->pageSize;
+
+	for (i = 0; i < 16; i++)
+    {
+        ((int8_t*) buf)[i] = 0;
+    }	
+}
+
 void initBufferPage(sbitsState *state, int pageNum)
 {
 	/* Initialize page */
@@ -273,7 +285,7 @@ int8_t sbitsPut(sbitsState *state, void* key, void *data)
 				writeIndexPage(state, buf);
 				
 				idxcount = 0;
-				initBufferPage(state, SBITS_INDEX_WRITE_BUFFER);
+				initBufferPageHeader(state, SBITS_INDEX_WRITE_BUFFER);
 
 				/* Add page id to minimum value spot in page */
 				id_t *ptr = (id_t*) (buf + 8);

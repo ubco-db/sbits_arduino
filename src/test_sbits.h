@@ -164,20 +164,28 @@ int8_t inBitmapInt16(void *data, void *bm)
 /* A 64-bit bitmap on a 32-bit int value */
 void updateBitmapInt64(void *data, void *bm)
 {
-    int32_t val = *((int32_t*) data);    
+    int16_t val = (int16_t) *((int32_t*) data);    
       
-    int16_t stepSize = 10;    // Temperature data in F. Scaled by 10. */    
-    int32_t current = 320;
-    int8_t bmsize = 63;
-    int8_t count = 0;
-    
+    const int8_t stepSize = 10;    // Temperature data in F. Scaled by 10. */    
+    int16_t current = 320;
+    const int8_t bmsize = 63;
+    uint8_t count = 0;
+      
     while (val > current && count < bmsize)
     {
         current += stepSize;
         count++;
     }
-    uint8_t b = 128;
-    int8_t offset = count / 8;    
+    /*
+    if (val > current)
+    {
+        count = (val-current) / stepSize;
+        if (count > bmsize)
+            count = bmsize;
+    }
+    */
+    uint8_t b = 128;    
+    int8_t offset = count >> 3;  // / 8
     b = b >> (count & 7);
     
     *( (char*) ((char*) bm + offset)) =  *( (char*) ((char*)bm + offset)) | b;                 
@@ -280,7 +288,7 @@ void runalltests_sbits()
     int8_t M = 4;    
     int32_t numRecords = 10000;
     uint32_t numSteps = 10, stepSize = numRecords / numSteps;
-    count_t r, numRuns = 1, l;
+    count_t r, numRuns = 3, l;
     uint32_t times[numSteps][numRuns];
     uint32_t reads[numSteps][numRuns];
     uint32_t writes[numSteps][numRuns];
@@ -293,6 +301,11 @@ void runalltests_sbits()
     SD_FILE    *infile;
     uint32_t minRange, maxRange;
     char infileBuffer[512];
+    uint32_t reads2[numSteps][numRuns];
+    uint32_t writes2[numSteps][numRuns];    
+    uint32_t hits2[numSteps][numRuns];        
+    uint32_t rreads2[numSteps][numRuns];
+    uint32_t rhits2[numSteps][numRuns];
 
     if (seqdata != 1)
     {   /* Open file to read input records */
@@ -306,7 +319,7 @@ void runalltests_sbits()
         infile = fopen("data/uwa500K.bin", "r+b");
         minRange = 946713600;
         maxRange = 977144040;
-        numRecords = 500000 / 50;
+        numRecords = 500000 / 5;
         
         stepSize = numRecords / numSteps;
     }
@@ -384,6 +397,9 @@ void runalltests_sbits()
                         writes[l][r] = state->numWrites;
                         overwrites[l][r] = 0;
                         hits[l][r] = state->bufferHits;                     
+                        reads2[l][r] = state->numIdxReads;
+                        writes2[l][r] =state->numIdxWrites;                    
+                        hits2[l][r] = 0; 
                     }
                 }                     
             }    
@@ -420,7 +436,10 @@ void runalltests_sbits()
                             reads[l][r] = state->numReads;
                             writes[l][r] = state->numWrites;
                             overwrites[l][r] = 0;
-                            hits[l][r] = state->bufferHits;                     
+                            hits[l][r] = state->bufferHits; 
+                            reads2[l][r] = state->numIdxReads;
+                            writes2[l][r] =state->numIdxWrites;                    
+                            hits2[l][r] = 0;                    
                         }
                     }  
                     i++;      
@@ -445,6 +464,9 @@ doneread:
         writes[l][r] = state->numWrites;
         overwrites[l][r] = 0;
         hits[l][r] = state->bufferHits;
+        reads2[l][r] = state->numIdxReads;
+        writes2[l][r] =state->numIdxWrites;                    
+        hits2[l][r] = 0;    
       
         printf("Elapsed Time: %lu ms\n", (end - start));
         printf("Records inserted: %lu\n", numRecords);
@@ -478,7 +500,9 @@ doneread:
                     {
                         rtimes[l][r] = millis()-start;
                         rreads[l][r] = state->numReads;                    
-                        rhits[l][r] = state->bufferHits;                     
+                        rhits[l][r] = state->bufferHits;                                              
+                        rreads2[l][r] = state->numIdxReads;                    
+                        rhits2[l][r] = 0;                      
                     }
                 }     
             }
@@ -487,7 +511,7 @@ doneread:
         {   /* Data from file */            
             int8_t headerSize = 16;
             i = 0;
-            int8_t queryType = 1;
+            int8_t queryType = 2;
 
             if (queryType == 1)
             {   /* Query each record from original data set. */
@@ -525,7 +549,9 @@ doneread:
                             {
                                 rtimes[l][r] = millis()-start;
                                 rreads[l][r] = state->numReads;                    
-                                rhits[l][r] = state->bufferHits;                   
+                                rhits[l][r] = state->bufferHits; 
+                                rreads2[l][r] = state->numIdxReads;                    
+                                rhits2[l][r] = 0;                      
                             }
                         }  
                         i++;  
@@ -541,9 +567,9 @@ doneread:
                 i = 0;
                 int32_t num = maxRange - minRange;
                 printf("Num :%d Rand madx: %d\n", num, RAND_MAX);
-                numRecords = 10000;
-                stepSize = 1000;
-                while (i < numRecords)
+                int64_t numRec = 10000;
+                int32_t stepS = 1000;
+                while (i < numRec)
                 {                    
                     double scaled = ((double)rand()*(double)rand())/RAND_MAX/RAND_MAX;				
                     int32_t key = (num+1)*scaled + minRange;  
@@ -551,15 +577,17 @@ doneread:
                     // printf("Key :%d\n", key);           
                     sbitsGet(state, &key, recordBuffer);                          
 
-                    if (i % stepSize == 0)
+                    if (i % stepS == 0)
                     {                                                         
-                        l = i / stepSize - 1;
+                        l = i / stepS - 1;
                         printf("Num: %lu KEY: %lu\n", i, key);     
                         if (l < numSteps && l >= 0)
                         {
                             rtimes[l][r] = millis() - start;
                             rreads[l][r] = state->numReads;                    
-                            rhits[l][r] = state->bufferHits;                     
+                            rhits[l][r] = state->bufferHits;
+                            rreads2[l][r] = state->numIdxReads;                    
+                            rhits2[l][r] = 0;                            
                         }
                     }     
                     i++;  
@@ -616,7 +644,9 @@ doneread:
                         {
                             rtimes[l][r] = millis() - start;
                             rreads[l][r] = state->numReads;                    
-                            rhits[l][r] = state->bufferHits;                     
+                            rhits[l][r] = state->bufferHits;
+                            rreads2[l][r] = state->numIdxReads;                    
+                            rhits2[l][r] = 0;                            
                         }
                     }      
                 }
@@ -630,6 +660,8 @@ doneread:
         rtimes[l][r] = millis()-start;
         rreads[l][r] = state->numReads;                    
         rhits[l][r] = state->bufferHits;  
+        rreads2[l][r] = state->numIdxReads;                    
+        rhits2[l][r] = 0;       
 
         printStats(state); 
             
@@ -643,7 +675,7 @@ doneread:
         free(state);       
     }
     
-    printf("\nComplete");
+    printf("\nComplete\n");
 
     // Prints results
     uint32_t sum;
@@ -660,6 +692,15 @@ doneread:
         }
         printf("\t%lu\n", sum/r);
 
+        printf("Index Reads:   ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += reads2[i-1][r];
+            printf("\t%lu", reads2[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+
         printf("Writes: ");
         sum = 0;
         for (r=0 ; r < numRuns; r++)
@@ -669,6 +710,15 @@ doneread:
         }
         printf("\t%lu\n", sum/r);
         
+        printf("Index Writes: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += writes2[i-1][r];
+            printf("\t%lu", writes2[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);      
+
         printf("Overwrites: ");
         sum = 0;
         for (r=0 ; r < numRuns; r++)
@@ -682,8 +732,8 @@ doneread:
         sum = 0;
         for (r=0 ; r < numRuns; r++)
         {
-            sum += overwrites[i-1][r] + writes[i-1][r];
-            printf("\t%lu", overwrites[i-1][r] + writes[i-1][r]);
+            sum += overwrites[i-1][r] + writes[i-1][r]+writes2[i-1][r];
+            printf("\t%lu", overwrites[i-1][r] + writes[i-1][r]+writes2[i-1][r]);
         }
         printf("\t%lu\n", sum/r);
 
@@ -696,6 +746,15 @@ doneread:
         }
         printf("\t%lu\n", sum/r);
         
+        printf("Idx buf hits: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += hits2[i-1][r];
+            printf("\t%lu", hits2[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+
         printf("Write Time: ");
         sum = 0;
         for (r=0 ; r < numRuns; r++)
@@ -723,12 +782,30 @@ doneread:
         }
         printf("\t%lu\n", sum/r);
 
-        printf("R Buffer hits: ");
+        printf("Idx R Reads: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += rreads2[i-1][r];
+            printf("\t%lu", rreads2[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+
+        printf("R Buf hits: ");
         sum = 0;
         for (r=0 ; r < numRuns; r++)
         {
             sum += rhits[i-1][r];
             printf("\t%lu", rhits[i-1][r]);
+        }
+        printf("\t%lu\n", sum/r);
+
+        printf("Idx RBuf hits: ");
+        sum = 0;
+        for (r=0 ; r < numRuns; r++)
+        {
+            sum += rhits2[i-1][r];
+            printf("\t%lu", rhits2[i-1][r]);
         }
         printf("\t%lu\n", sum/r);
     }
