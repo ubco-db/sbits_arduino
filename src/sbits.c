@@ -45,7 +45,7 @@
 /**
  * Use binary search instead of value-based search
  */
-#define USE_BINARY_SEARCH 	1
+// #define USE_BINARY_SEARCH 	1
 
 void printBitmap(char* bm)
 {	
@@ -313,7 +313,7 @@ int8_t sbitsPut(sbitsState *state, void* key, void *data)
 			numBlocks = 1;
 
 		// #ifndef USE_BINARY_SEARCH
-		state->avgKeyDiff = ( *((uint32_t*) sbitsGetMaxKey(state, state->buffer)) - state->minKey) / numBlocks / (state->maxRecordsPerPage-1); 
+		state->avgKeyDiff = ( *((uint32_t*) sbitsGetMaxKey(state, state->buffer)) - state->minKey) / numBlocks / state->maxRecordsPerPage; 
 		// printf("Numb: %lu Avg key diff: %lu\n", numBlocks, state->avgKeyDiff);
 		// printf("MK: %lu MK: %lu\n", *((uint32_t*) sbitsGetMaxKey(state, state->buffer)), state->minKey);
 		// #endif
@@ -443,7 +443,7 @@ int8_t sbitsGet(sbitsState *state, void* key, void *data)
  	buf = state->buffer + state->pageSize;
 	if (state->nextPageWriteId < state->firstDataPage)
 	{	/* Wrapped around in memory and first data page is after the next page that will write */
-		last = state->endDataPage-state->firstDataPage+1+state->nextIdxPageWriteId;
+		last = state->endDataPage-state->firstDataPage+1+state->nextPageWriteId;
 	}
 	else
 	{
@@ -469,14 +469,14 @@ int8_t sbitsGet(sbitsState *state, void* key, void *data)
 		int32_t physPageId = pageId + state->firstDataPage;
 		if (physPageId >= state->endDataPage)
 			physPageId = physPageId - state->endDataPage;
-
-		// printf("Page id: %lu  Offset: %lu Phys: %lu\n", pageId, offset, physPageId);		
-
+		
+		// printf("Min key: %lu Max rec: %d  Diff: %lu Page id: %lu  Offset: %d\n", state->minKey, state->maxRecordsPerPage, state->avgKeyDiff, pageId, offset);
+	
 		/* Read page into buffer */
 		if (readPage(state, physPageId) != 0)
 			return -1;
 		numReads++;
-		// printf("REad succes\n");
+		
 		if (first >= last)
 			break;
 
@@ -536,7 +536,7 @@ int8_t sbitsGet(sbitsState *state, void* key, void *data)
 		}
 	}
 	#endif		
-		 
+	// printf("Key: %lu Num reads: %d\n", *((int32_t*) key), numReads);
 	id_t nextId = sbitsSearchNode(state, buf, key, nextId, 0);
 	if (nextId != -1)
 	{	/* Key found */

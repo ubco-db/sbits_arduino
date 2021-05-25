@@ -342,7 +342,7 @@ void runalltests_sbits()
         state->endAddress = state->pageSize * numRecords / 10;  /* Modify this value lower to test wrap around */	
         state->eraseSizeInPages = 4;
         state->parameters = SBITS_USE_BMAP | SBITS_USE_INDEX;
-        state->parameters =  0;
+        // state->parameters =  0;
         if (SBITS_USING_INDEX(state->parameters) == 1)
             state->endAddress += state->pageSize * (state->eraseSizeInPages *2);    
         if (SBITS_USING_BMAP(state->parameters))
@@ -406,7 +406,6 @@ void runalltests_sbits()
         }
         else
         {   /* Read data from a file */
-            // char infileBuffer[512];
             int8_t headerSize = 16;
             i = 0;
             fseek(infile, 0, SEEK_SET);
@@ -569,6 +568,7 @@ doneread:
                 printf("Num :%d Rand madx: %d\n", num, RAND_MAX);
                 int64_t numRec = 10000;
                 int32_t stepS = 1000;
+                
                 while (i < numRec)
                 {                    
                     double scaled = ((double)rand()*(double)rand())/RAND_MAX/RAND_MAX;				
