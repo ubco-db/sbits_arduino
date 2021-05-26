@@ -118,7 +118,7 @@ sd_fopen(
 		/*	Open a file for reading. The file must exist. */
 		/* check to see if file exists */
 
-		if (!SD.exists(filename)) {
+		if (!SD.exists((char*) filename)) {
 			return NULL;
 		}
 
@@ -130,15 +130,15 @@ sd_fopen(
 		/* its content is erased and the file is */
 		/* considered as a new empty file. */
 
-		if (SD.exists(filename)) {
-			SD.remove(filename);
+		if (SD.exists((char*) filename)) {
+			SD.remove((char*) filename);
 		}
 
 		operation = FILE_WRITE;
 		/* Open a file for update both reading and writing. The file must exist. */
 	}
 	else if (strstr(mode, "r+") != NULL) {
-		if (!SD.exists(filename)) {
+		if (!SD.exists((char*) filename)) {
 			return NULL;
 		}
 
@@ -147,8 +147,8 @@ sd_fopen(
 	}
 	/* Create an empty file for both reading and writing. */
 	else if (strstr(mode, "w+") != NULL) {
-		if (SD.exists(filename)) {
-			SD.remove(filename);
+		if (SD.exists((char*) filename)) {
+			SD.remove((char*) filename);
 		}
 
 		operation = (O_READ | O_WRITE | O_CREAT);

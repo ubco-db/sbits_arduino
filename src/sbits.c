@@ -165,10 +165,9 @@ int8_t sbitsInit(sbitsState *state)
 	/* Calculate number of records per page */
 	state->maxRecordsPerPage = (state->pageSize - state->headerSize) / state->recordSize;
 	printf("Header size: %d  Records per page: %d\n", state->headerSize, state->maxRecordsPerPage);	
-
+	 
 	/* Allocate first page of buffer as output page */
-	initBufferPage(state, 0);
- 
+	initBufferPage(state, 0); 
   	resetStats(state);
 
 	id_t numPages = (state->endAddress - state->startAddress) / state->pageSize;
