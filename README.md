@@ -11,6 +11,9 @@ SBITS is a high performance embedded data storage and index structure for time s
 7. Easy to use and include in existing projects. Requires only an Arduino with an SD card.
 8. Open source license. Free to use for commerical and open source projects.
 
+## License
+[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+
 ## Code Files
 
 * test_sbits.h - test file demonstrating how to get, put, and iterate through data in index
